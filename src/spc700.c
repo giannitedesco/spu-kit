@@ -7,6 +7,7 @@
 #include "aram.h"
 #include "apu.h"
 
+//#define TRACE_FOR_COMPARISON
 //#define INSN_TRACE
 
 #ifdef INSN_TRACE
@@ -145,13 +146,13 @@ static uint8_t psw_compose(void)
 struct psw_str {
 	union {
 		struct {
-			char c;
-			char z;
-			char i;
-			char h;
-			char p;
-			char v;
 			char n;
+			char v;
+			char p;
+			char h;
+			char i;
+			char z;
+			char c;
 			char nul;
 		};
 		char str[8];
@@ -482,7 +483,7 @@ static uint8_t alu_rol(const uint8_t operand)
 	const uint16_t result = ((uint16_t)operand << 1) | carry;
 	const uint8_t trunc = result;
 
-	carry = operand & 0x100;
+	carry = result & 0x100;
 	set_zn(trunc);
 
 	return trunc;
@@ -535,7 +536,7 @@ static uint8_t alu_eor(const uint8_t a, const uint8_t b)
 	return result;
 }
 
-static uint8_t alu_adc(const uint8_t a, const uint8_t b)
+static uint8_t adc(const uint8_t a, const uint8_t b)
 {
 	const uint16_t result = a + b + carry;
 	const uint8_t trunc = result;
@@ -545,16 +546,32 @@ static uint8_t alu_adc(const uint8_t a, const uint8_t b)
 	half_carry = (a ^ b ^ trunc) & 0x10;
 	overflow = (a ^ trunc) & (b ^ trunc) & 0x80;
 
-	set_zn(trunc);
-
 	return trunc;
+}
+
+__attribute__((always_inline))
+static inline uint8_t sbc(const uint8_t a, const uint8_t b)
+{
+	return adc(a, ~b);
+}
+
+static uint8_t alu_adc(const uint8_t a, const uint8_t b)
+{
+	const uint8_t result = adc(a, b);
+
+	set_zn(result);
+	return result;
 }
 
 static uint8_t alu_sbc(const uint8_t a, const uint8_t b)
 {
-	return alu_adc(a, ~b);
+	const uint8_t result = sbc(a, b);
+
+	set_zn(result);
+	return result;
 }
 
+#if 0
 static uint16_t alu_add_wide(const uint16_t a, const uint16_t b)
 {
 	const uint32_t result = a + b + carry;
@@ -568,17 +585,34 @@ static uint16_t alu_add_wide(const uint16_t a, const uint16_t b)
 
 	return trunc;
 }
+#endif
 
 static uint16_t alu_addw(const uint16_t a, const uint16_t b)
 {
+	uint16_t result;
+
+	carry = false;
+	result = adc(a, b) | (adc(a >> 8, b >> 8) << 8);
+	set_zn16(result);
+	return result;
+#if 0
 	carry = false;
 	return alu_add_wide(a, b);
+#endif
 }
 
 static uint16_t alu_subw(const uint16_t a, const uint16_t b)
 {
+	uint16_t result;
+
+	carry = true;
+	result = sbc(a, b) | (sbc(a >> 8, b >> 8) << 8);
+	set_zn16(result);
+	return result;
+#if 0
 	carry = true;
 	return alu_add_wide(a, ~b);
+#endif
 }
 
 static void alu_cmp(const uint8_t a, const uint8_t b)
@@ -1186,10 +1220,10 @@ static void insn_dec_dp(void)
 	const uint8_t operand = mem_load(addr);
 	const uint8_t result = operand - 1;
 
+	set_zn(result);
 	insn_trace("dec  d        $%02x -> $%02x ($%04x)",
 			operand, result, addr);
 
-	set_zn(result);
 	mem_store(addr, result);
 }
 
@@ -1200,10 +1234,10 @@ static void insn_dec_abs(void)
 	const uint8_t operand = mem_load(addr);
 	const uint8_t result = operand - 1;
 
+	set_zn(result);
 	insn_trace("dec  !a       $%02x -> $%02x ($%04x)",
 			operand, result, addr);
 
-	set_zn(result);
 	mem_store(addr, result);
 }
 
@@ -1215,7 +1249,6 @@ static void insn_dec_dpx(void)
 	const uint8_t result = operand - 1;
 
 	set_zn(result);
-
 	insn_trace("dec  d+X      $%02x-- -> $%02x ($%04x) [%s]",
 		operand, result, addr, psw().str);
 
@@ -1228,7 +1261,6 @@ static void insn_dec_a(void)
 	const uint8_t result = a - 1;
 
 	set_zn(result);
-
 	insn_trace("dec  A        $%02x-- -> $%02x [%s]",
 		a, result, psw().str);
 
@@ -1242,10 +1274,10 @@ static void insn_inc_dp(void)
 	const uint8_t operand = mem_load(addr);
 	const uint8_t result = operand + 1;
 
+	set_zn(result);
 	insn_trace("inc  d        $%02x++ -> $%02x ($%04x)",
 			operand, result, addr);
 
-	set_zn(result);
 	mem_store(addr, result);
 }
 
@@ -1257,6 +1289,7 @@ static void insn_inc_abs(void)
 	const uint8_t result = operand + 1;
 
 	mem_store(addr, result);
+	set_zn(result);
 
 	insn_trace("inc  !a       $%02x++ -> $%02x ($%04x) [%s]",
 		operand, result, addr, psw().str);
@@ -1269,10 +1302,10 @@ static void insn_inc_dpx(void)
 	const uint8_t operand = mem_load(addr);
 	const uint8_t result = operand + 1;
 
+	set_zn(result);
 	insn_trace("inc  d+x      $%02x -> $%02x ($%04x)",
 			operand, result, addr);
 
-	set_zn(result);
 	mem_store(addr, result);
 }
 
@@ -1281,6 +1314,7 @@ static void insn_inc_a(void)
 {
 	const uint8_t result = a + 1;
 
+	set_zn(result);
 	insn_trace("inc  A        $%02x++ -> $%02x [%s]",
 		a, result, psw().str);
 
@@ -1782,7 +1816,6 @@ static void insn_dec_y(void)
 	const uint8_t result = y - 1;
 
 	set_zn(result);
-
 	insn_trace("dec  Y        $%02x-- -> $%02x [%s]",
 		y, result, psw().str);
 
@@ -1795,7 +1828,6 @@ static void insn_inc_y(void)
 	const uint8_t result = y + 1;
 
 	set_zn(result);
-
 	insn_trace("inc  Y        $%02x++ -> $%02x [%s]",
 		y, result, psw().str);
 
@@ -1826,7 +1858,6 @@ static void insn_dec_x(void)
 	const uint8_t result = x - 1;
 
 	set_zn(result);
-
 	insn_trace("dec  X        $%02x-- -> $%02x [%s]",
 		x, result, psw().str);
 
@@ -1854,6 +1885,7 @@ static void insn_inc_x(void)
 {
 	const uint8_t result = x + 1;
 
+	set_zn(result);
 	insn_trace("inc  X        $%02x++ -> $%02x [%s]",
 		x, result, psw().str);
 
@@ -2714,7 +2746,6 @@ static void insn_mov_dp_imm(void)
 	const uint16_t addr = direct_page();
 
 	mem_store(addr, imm);
-	set_z(imm);
 
 	insn_trace("mov  d,#i     #$%02x -> $%04x", imm, addr);
 }
@@ -2817,9 +2848,9 @@ static void insn_dbnz_y(void)
 	const uint8_t result = y - 1;
 	const int8_t disp = relative();
 
-	zero = !result;
+	//zero = !result;
 
-	if (!zero) {
+	if (result) {
 		pc += disp;
 		branch_taken();
 		insn_trace("dbnz Y,rel    $%02x -> $%02x %d taken -> $%04x",
@@ -2978,6 +3009,7 @@ static void insn_mov_a_dp(void)
 	const uint16_t addr = direct_page();
 	const uint8_t operand = mem_load(addr);
 
+	set_zn(operand);
 	a = operand;
 
 	insn_trace("mov  A,d      $%02x <- ($%04x)", a, addr);
@@ -3057,7 +3089,7 @@ static void insn_mov_a_absx(void)
 	a = operand;
 
 	insn_trace("mov  A,!a+X   $%02x ($%04x) [%s]",
-		addr, operand, psw().str);
+		operand, addr, psw().str);
 }
 
 /* 0xf6 - load abs + Y into A */
@@ -3228,12 +3260,12 @@ static void insn_tset1_abs(void)
 	const uint16_t addr = absolute();
 	const uint8_t operand = mem_load(addr);
 	const uint8_t out = operand | a;
-	const uint8_t result = operand & a;
+	const uint8_t result = a - operand;
 
 	mem_store(addr, out);
 	set_zn(result);
 
-	insn_trace("tset mb       A=$%02x $%02x -> $%02x ($%04x) %s",
+	insn_trace("tset mb       A=$%02x $%02x -> $%02x ($%04x) [%s]",
 		a, operand, out, addr, psw().str);
 }
 
@@ -3243,12 +3275,12 @@ static void insn_tclr1_abs(void)
 	const uint16_t addr = absolute();
 	const uint8_t operand = mem_load(addr);
 	const uint8_t out = operand & ~a;
-	const uint8_t result = operand & a;
+	const uint8_t result = a - operand;
 
 	mem_store(addr, out);
 	set_zn(result);
 
-	insn_trace("tclr mb       A=$%02x $%02x -> $%02x ($%04x) %s",
+	insn_trace("tclr mb       A=$%02x $%02x -> $%02x ($%04x) [%s]",
 		a, operand, out, addr, psw().str);
 }
 
@@ -3564,7 +3596,10 @@ void spc700_run_forever(void)
 			return;
 		}
 
-		// say(DEBUG, "fetch: $%04x opcode $%02x", cur_pc, opcode);
+#ifdef TRACE_FOR_COMPARISON
+		printf("%04x %02x %02x %02x %02x %02x\n",
+			cur_pc, opcode, x, y, a, psw_compose());
+#endif
 
 		(*cb)();
 

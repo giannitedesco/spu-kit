@@ -3659,7 +3659,7 @@ void spc700_run_forever(void)
 		cycs++;
 		(*cb)();
 
-		/* average 3.9 cycles per instruction, conveniently a common
+		/* TODO: average 3.9 cycles per instruction, conveniently a common
 		 * divisor of 0x20 which means we can do the fast check below.
 		 */
 		cycle += 4;

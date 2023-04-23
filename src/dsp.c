@@ -50,7 +50,6 @@ struct sample {
 struct vstate {
 	int interp_pos;
 	int env;
-	int16_t output_sample;
 	uint16_t srcn_ptr;
 	uint16_t next_brr_addr;
 	uint16_t brr_addr;
@@ -824,11 +823,21 @@ static int interpolate(struct vstate * const st)
 	return out & ~1;
 }
 
-static void voice_run(const unsigned int i)
+__attribute__((pure,always_inline))
+static inline struct sample silence(void)
+{
+	return (struct sample) {
+		.left = 0,
+		.right = 0,
+	};
+}
+
+static struct sample voice_run(const unsigned int i)
 {
 	struct vregs *v = voice(i);
 	struct vstate *st = &vstate[i];
 	const uint8_t bit = (1U << i);
+	int16_t sample;
 
 	/* CLOCK: cycle 1 */
 
@@ -882,22 +891,23 @@ static void voice_run(const unsigned int i)
 		if (regs[REG_NON] & bit) {
 			/* TODO: noise */
 			say(WARN, "noise sample");
+			sample = 0;
 		} else {
-			st->output_sample = interpolate(st);
+			sample = interpolate(st);
 		}
 
 		/* XXX: buffer this for later */
-		v->outx = st->output_sample >> 8;
+		v->outx = sample >> 8;
 
 		/* apply envelope */
-		st->output_sample = ((st->output_sample * st->env) >> 11) & ~1;
+		sample = ((sample * st->env) >> 11) & ~1;
 
 		/* XXX: buffer this for later */
 		v->envx = (st->env >> 4);
 	} else {
 		v->outx = 0;
 		v->envx = 0;
-		st->output_sample = 0;
+		sample = 0;
 	}
 
 	/* output silence due to reset or end of sample eilence */
@@ -925,7 +935,7 @@ static void voice_run(const unsigned int i)
 	if (!st->attack_delay) {
 		run_envelope(st, v->adsr1, v->adsr2, v->gain);
 		if (st->env_mode == ENV_RELEASE && st->env == 0)
-			return;
+			return silence();
 	}
 
 	/* CLOCK: cycle 4 */
@@ -956,8 +966,6 @@ static void voice_run(const unsigned int i)
 	/* CLOCK: cycle 5 */
 
 	/* output right channel */
-	if (regs[REG_EON] & bit) {
-	}
 
 	/* buffer ENDX */
 	if (st->attack_delay == 5) {
@@ -976,6 +984,10 @@ static void voice_run(const unsigned int i)
 
 	/* CLOCK: cycle 9 */
 	/* TODO: expose ENVX */
+	return (struct sample) {
+		.left = ((int)sample * v->voll) >> 7,
+		.right = ((int)sample * v->volr) >> 7,
+	};
 }
 
 __attribute__((always_inline))
@@ -990,22 +1002,11 @@ static inline struct sample sample_blend(const struct sample a, const struct sam
 	};
 }
 
-__attribute__((pure))
-static struct sample voice_sample(const unsigned int i)
-{
-	const struct vregs *v = voice(i);
-	struct vstate *st = &vstate[i];
-
-	return (struct sample) {
-		.left = ((int)st->output_sample * v->voll) >> 7,
-		.right = ((int)st->output_sample * v->volr) >> 7,
-	};
-}
-
 /* Run 32 cycles */
 static struct sample next_sample(void)
 {
 	struct sample sample = {0, };
+	struct sample echo = {0, };
 
 	// say(DEBUG, "DSP 32 clocks");
 
@@ -1026,9 +1027,31 @@ static struct sample next_sample(void)
 	/* TODO: sample noise */
 
 	for (int i = 0; i < DSP_CHANNELS; i++) {
-		voice_run(i);
-		sample = sample_blend(sample, voice_sample(i));
+		const struct sample vsample = voice_run(i);
+
+		sample = sample_blend(sample, vsample);
+		if (regs[REG_EON] & (1U << i)) {
+			echo = sample_blend(sample, vsample);
+		}
 	}
+
+	/* ECHO CLOCK 1 */
+	/* TODO: blend echo into left output sample */
+	/* TOOD: calculate echo feedback term and buffer it */
+
+	/* ECHO CLOCK 2 */
+	/* TODO: blend echo into left output sample */
+	/* TODO: check global muting */
+
+	/* ECHO CLOCK 3 */
+	/* TODO: check echo enabled */
+
+	/* ECHO CLOCK 4 */
+	/* TODO: Check ESA */
+	/* TODO: write left echo */
+
+	/* ECHO CLOCK 5 */
+	/* TODO: write right echo */
 
 	return sample;
 }
@@ -1064,7 +1087,6 @@ void _dsp_run32(void)
 			abort();
 		exit(0);
 	}
-
 }
 
 static void dump_dir(void)

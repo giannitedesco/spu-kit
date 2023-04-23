@@ -40,7 +40,6 @@ union state s;
 static uint8_t io_in[4];
 static uint8_t io_out[4];
 static struct timer T[3];
-bool _apu_show_ipl_rom;
 
 __attribute__((pure))
 struct apu_state apu_state_from_aram(const uint8_t aram[static 0x10000])
@@ -57,7 +56,7 @@ static inline void dump_apu_state(void)
 		s.regs.tdiv[0],
 		s.regs.tdiv[1],
 		s.regs.tdiv[2],
-		_apu_show_ipl_rom ? "EN" : "XX");
+		_apu_get_show_ipl_rom() ? "EN" : "XX");
 }
 
 static struct timer timer_init(const uint8_t div_reg)
@@ -119,7 +118,7 @@ static void apu_ctrl_store(const uint8_t byte)
 		s.regs.io_in[3] = 0;
 	}
 
-	_apu_show_ipl_rom = (byte & CTRL_BOOT_ROM);
+	_apu_set_show_ipl_rom(byte & CTRL_BOOT_ROM);
 }
 
 __attribute__((pure))
@@ -321,5 +320,5 @@ void apu_reset(void)
 	};
 	memset(&T, 0, sizeof(T));
 	memset(io_out, 0, sizeof(io_out));
-	_apu_show_ipl_rom = true;
+	_apu_set_show_ipl_rom(true);
 }

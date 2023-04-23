@@ -7,6 +7,13 @@
 #include "aram.h"
 #include "apu.h"
 
+/* Accuracy */
+// #define ACCURATE_SPC700
+#ifdef ACCURATE_SPC700
+#define ACCURATE_INSN_FETCH
+#define ACCURATE_IPL_ROM
+#endif
+
 //#define TRACE_FOR_COMPARISON
 //#define INSN_TRACE
 
@@ -50,7 +57,6 @@ static bool negative;
 
 /* RAM */
 uint8_t aram[0x10000];
-static uint8_t aram_extra[0x40];
 
 /* Mask ROM */
 static const uint8_t ipl_rom[0x40] = {
@@ -211,7 +217,6 @@ static inline void dump_cpu_state(void)
 {
 	// dump_stack("dump");
 	dump_regs();
-	hex_dump(aram_extra, sizeof(aram_extra), 0);
 }
 
 static uint16_t get_ya(void)
@@ -225,10 +230,41 @@ static void set_ya(const uint16_t ya)
 	a = ya & 0xff;
 }
 
+static uint8_t extra_ram[IPL_ROM_SIZE];
+static bool show_rom;
+
+__attribute__((pure))
+bool _apu_get_show_ipl_rom(void)
+{
+	return show_rom;
+}
+
+#ifdef ACCURATE_IPL_ROM
 static uint8_t ipl_rom_load(const uint16_t addr)
 {
 	return ipl_rom[addr - IPL_ROM_MASK];
 }
+
+void _apu_set_show_ipl_rom(const bool show)
+{
+	show_rom = show;
+}
+#else
+void _apu_set_show_ipl_rom(const bool show)
+{
+	if (show == show_rom)
+		return;
+
+	show_rom = show;
+
+	if (show_rom) {
+		memcpy(extra_ram, aram + IPL_ROM_BASE, IPL_ROM_SIZE);
+		memcpy(aram + IPL_ROM_BASE, ipl_rom, IPL_ROM_SIZE);
+	} else {
+		memcpy(aram + IPL_ROM_BASE, extra_ram, IPL_ROM_SIZE);
+	}
+}
+#endif
 
 static inline void mem_store(const uint16_t addr, const uint8_t byte)
 {
@@ -244,9 +280,11 @@ static inline uint8_t mem_load(const uint16_t addr)
 	if (apu_mmio_address(addr)) {
 		return _apu_mmio_load(addr);
 	}
-	if (unlikely(_apu_show_ipl_rom && ipl_rom_address(addr))) {
+#ifdef ACCURATE_IPL_ROM
+	if (unlikely(show_rom && ipl_rom_address(addr))) {
 		return ipl_rom_load(addr);
 	}
+#endif
 	return aram[addr];
 }
 
@@ -275,27 +313,36 @@ static void mem_store_word(const uint16_t addr, const uint16_t word)
 	mem_store(addr + 1, word >> 8);
 }
 
-static uint8_t fetch_insn(void)
+static inline uint8_t fetch_insn(void)
 {
+#ifdef ACCURATE_INSN_FETCH
 	return mem_load(pc++);
+#else
+#ifdef ACCURATE_IPL_ROM
+	if (unlikely(show_rom && ipl_rom_address(addr))) {
+		return ipl_rom_load(addr);
+	}
+#endif
+	return aram[pc++];
+#endif
 }
 
-static int8_t relative(void)
+static inline int8_t relative(void)
 {
 	return fetch_insn();
 }
 
-static uint8_t immediate(void)
+static inline uint8_t immediate(void)
 {
 	return fetch_insn();
 }
 
-static uint16_t direct_page_effective(const uint8_t addr)
+static inline uint16_t direct_page_effective(const uint8_t addr)
 {
 	return (psw_p << 8) | addr;
 }
 
-static uint16_t direct_page(void)
+static inline uint16_t direct_page(void)
 {
 	const uint8_t lo = fetch_insn();
 
@@ -309,7 +356,7 @@ void spc700_restore(const struct spc700_regs r,
 {
 	set_regs(r);
 	memcpy(aram, in, sizeof(aram));
-	memcpy(aram_extra, in, sizeof(aram_extra));
+	memcpy(extra_ram, extra, sizeof(extra_ram));
 
 	dump_cpu_state();
 }
@@ -328,7 +375,7 @@ void spc700_reset(void)
 }
 
 /* d+X - direct page address, indexed by X register*/
-static uint16_t direct_page_x(void)
+static inline uint16_t direct_page_x(void)
 {
 	const uint8_t lo = fetch_insn();
 
@@ -336,7 +383,7 @@ static uint16_t direct_page_x(void)
 }
 
 /* (d)+Y - pointer from direct page, indexed by Y register */
-static uint16_t direct_page_indirect_y(void)
+static inline uint16_t direct_page_indirect_y(void)
 {
 	const uint16_t ind_addr = direct_page();
 
@@ -344,7 +391,7 @@ static uint16_t direct_page_indirect_y(void)
 }
 
 /* (d+X) - at direct page, indexed by X, is a pointer */
-static uint16_t direct_page_x_indirect(void)
+static inline uint16_t direct_page_x_indirect(void)
 {
 	const uint16_t addr = direct_page_x();
 
@@ -352,19 +399,19 @@ static uint16_t direct_page_x_indirect(void)
 }
 
 /* (X) X register is a pointer into direct page */
-static uint16_t indirect_x(void)
+static inline uint16_t indirect_x(void)
 {
 	return direct_page_effective(x);
 }
 
 /* (Y) Y register is a pointer into direct page */
-static uint16_t indirect_y(void)
+static inline uint16_t indirect_y(void)
 {
 	return direct_page_effective(y);
 }
 
 /* !a - next two bytes after instruction encode the effective address */
-static uint16_t absolute(void)
+static inline uint16_t absolute(void)
 {
 	const uint8_t lo = fetch_insn();
 	const uint8_t hi = fetch_insn();
@@ -373,19 +420,19 @@ static uint16_t absolute(void)
 }
 
 /* !a+X - absolute address, indexed by X register */
-static uint16_t absolute_x(void)
+static inline uint16_t absolute_x(void)
 {
 	return absolute() + x;
 }
 
 /* !a+Y - absolute address, indexed by Y register */
-static uint16_t absolute_y(void)
+static inline uint16_t absolute_y(void)
 {
 	return absolute() + y;
 }
 
 /* (!a+X) - absolute address, indexed by X, is a pointer */
-static uint16_t absolute_x_indirect(void)
+static inline uint16_t absolute_x_indirect(void)
 {
 	uint16_t addr = absolute_x();
 
@@ -398,7 +445,8 @@ static inline bitaddr_t bitaddr_init(const uint16_t word)
 	return BITADDR_INIT(word & 0x1fff, word >> 13);
 }
 
-static bitaddr_t bitaddr(void)
+__attribute__((always_inline))
+static inline bitaddr_t bitaddr(void)
 {
 	return bitaddr_init(absolute());
 }

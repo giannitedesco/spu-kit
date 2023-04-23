@@ -878,21 +878,27 @@ static void voice_run(const unsigned int i)
 		st->env = 0;
 	}
 
-	if (regs[REG_NON] & bit) {
-		/* TODO: noise */
-		say(WARN, "noise sample");
+	if (st->env) {
+		if (regs[REG_NON] & bit) {
+			/* TODO: noise */
+			say(WARN, "noise sample");
+		} else {
+			st->output_sample = interpolate(st);
+		}
+
+		/* XXX: buffer this for later */
+		v->outx = st->output_sample >> 8;
+
+		/* apply envelope */
+		st->output_sample = ((st->output_sample * st->env) >> 11) & ~1;
+
+		/* XXX: buffer this for later */
+		v->envx = (st->env >> 4);
 	} else {
-		st->output_sample = interpolate(st);
+		v->outx = 0;
+		v->envx = 0;
+		st->output_sample = 0;
 	}
-
-	/* XXX: buffer this for later */
-	v->outx = st->output_sample >> 8;
-
-	/* apply envelope */
-	st->output_sample = ((st->output_sample * st->env) >> 11) & ~1;
-
-	/* XXX: buffer this for later */
-	v->envx = (st->env >> 4);
 
 	/* output silence due to reset or end of sample eilence */
 	if (regs[REG_FLG] & FLG_SOFT_RESET || (st->brr_hdr & BRR_FLAGS) == BRR_END) {

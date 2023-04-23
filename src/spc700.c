@@ -3629,6 +3629,14 @@ static const insn_t opcode_tbl[0x100] = {
 	[0xff] = NULL, /* halt */
 };
 
+static unsigned long cycs;
+
+__attribute__((destructor))
+static void dtor(void)
+{
+	printf("%lu cpu cycles\n", cycs);
+}
+
 __attribute__((hot,noinline))
 void spc700_run_forever(void)
 {
@@ -3648,7 +3656,7 @@ void spc700_run_forever(void)
 		printf("%04x %02x %02x %02x %02x %02x\n",
 			cur_pc, opcode, x, y, a, psw_compose());
 #endif
-
+		cycs++;
 		(*cb)();
 
 		/* average 3.9 cycles per instruction, conveniently a common
@@ -3656,7 +3664,7 @@ void spc700_run_forever(void)
 		 */
 		cycle += 4;
 
-		if ((cycle & 0x1f) == 0) {
+		if ((cycle & 0xf) == 0) {
 			_apu_update_clocks(cycle);
 		}
 	}

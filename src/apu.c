@@ -278,21 +278,21 @@ static void timer_tick(uint8_t index)
 	do_timer_tick(index);
 }
 
-__attribute__((noinline))
+__attribute__((hot))
 void _apu_update_clocks(unsigned int cycle)
 {
-	xassert((cycle & 0x1f) == 0);
+	xassert((cycle & 0x0f) == 0);
 
 	/* 64KHz clock (T2) */
 	timer_tick(2);
 
 	/* 32KHz is enough time for the DSP to output a sample */
-	if ((cycle & 0x3f) == 0) {
+	if ((cycle & 0x1f) == 0) {
 		_dsp_run32();
 	}
 
 	/* 8KHz clock (T0 and T1) */
-	if ((cycle & 0xff) == 0) {
+	if ((cycle & 0x7f) == 0) {
 		timer_tick(0);
 		timer_tick(1);
 	}

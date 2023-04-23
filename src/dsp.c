@@ -1033,12 +1033,23 @@ static struct sample next_sample(void)
 	return sample;
 }
 
+static unsigned long cycs;
+
+__attribute__((destructor))
+static void dtor(void)
+{
+	printf("%lu dsp cycles\n", cycs);
+}
+
 #define SECONDS 60
+__attribute__((noinline))
 void _dsp_run32(void)
 {
 	const struct sample sample = next_sample();
 	static unsigned int nr_samples;
 	static wav_t *wav;
+
+	cycs += 32;
 
 	if (unlikely(wav == NULL)) {
 		wav = wav_create("out.wav");

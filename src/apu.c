@@ -278,6 +278,8 @@ static void timer_tick(uint8_t index)
 	do_timer_tick(index);
 }
 
+#pragma GCC push_options
+#pragma GCC diagnostic ignored "-Wsuggest-attribute=cold"
 __attribute__((hot))
 void _apu_update_clocks(unsigned int cycle)
 {
@@ -297,6 +299,7 @@ void _apu_update_clocks(unsigned int cycle)
 		timer_tick(1);
 	}
 }
+#pragma GCC pop_options
 
 __attribute__((cold))
 void apu_restore(const struct apu_state st)

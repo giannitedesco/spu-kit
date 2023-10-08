@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 struct apu_state {
 	uint8_t test;
 	uint8_t ctrl;

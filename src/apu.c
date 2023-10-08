@@ -1,10 +1,11 @@
-#include <string.h>
-
-#include <spu-kit/system.h>
 #include <spu-kit/apu.h>
 
+#include "system.h"
 #include "apu.h"
 #include "dsp.h"
+
+#include <string.h>
+
 
 //#define MMIO_TRACE
 //#define TIMER_TRACE

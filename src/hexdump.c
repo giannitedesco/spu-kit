@@ -1,8 +1,10 @@
+#include <spu-kit/hexdump.h>
+
 #include <stdint.h>
 #include <stdio.h>
 #include <ctype.h>
 
-#include <spu-kit/system.h>
+#include "system.h"
 
 void hex_dump_addr(const size_t len;
 		const uint8_t tmp[static len],

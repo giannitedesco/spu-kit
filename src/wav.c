@@ -1,12 +1,16 @@
+#include <spu-kit/wav.h>
+#include <spu-kit/bufwr.h>
+
+#include "bufwr.h"
+#include "fd.h"
+#include "system.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <spu-kit/system.h>
-#include <spu-kit/wav.h>
-#include <spu-kit/fobuf.h>
 
 typedef struct fourcc_s {
 	union {
@@ -15,12 +19,12 @@ typedef struct fourcc_s {
 	};
 } fourcc_t;
 
-#define FOURCC_INIT(a, b, c, d) ((fourcc_t){ .bytes = {a, b, c, d}})
+#define FOURCC(a, b, c, d) ((fourcc_t){ .bytes = {a, b, c, d}})
 
-#define RIFF FOURCC_INIT('R', 'I', 'F', 'F')
-#define WAVE FOURCC_INIT('W', 'A', 'V', 'E')
-#define FMT FOURCC_INIT('f', 'm', 't', ' ')
-#define DATA FOURCC_INIT('d', 'a', 't', 'a')
+#define RIFF FOURCC('R', 'I', 'F', 'F')
+#define WAVE FOURCC('W', 'A', 'V', 'E')
+#define FMT FOURCC('f', 'm', 't', ' ')
+#define DATA FOURCC('d', 'a', 't', 'a')
 
 struct chunk_hdr {
 	fourcc_t fourcc;
@@ -52,7 +56,7 @@ struct wave_hdr {
 } __attribute__((packed));
 
 struct wav_s {
-	struct fobuf buf;
+	struct bufwr buf;
 	size_t nr_samples;
 };
 
@@ -83,7 +87,7 @@ wav_t *wav_create(const char *fn)
 	wav_t *wav;
 	int fd;
 
-	wav = calloc(1, sizeof(*wav));
+	wav = malloc(sizeof(*wav));
 	if (wav == NULL) {
 		goto out;
 	}
@@ -94,16 +98,21 @@ wav_t *wav_create(const char *fn)
 		goto out_free;
 	}
 
-	if (unlikely(!fobuf_init(&wav->buf, fd, 8192)))
+	*wav = (struct wav_s) {
+		.buf = bufwr__init(fd, 0),
+	};
+
+	if (unlikely(wav->buf.buf == NULL))
 		goto out_close;
 
-	if (unlikely(!fobuf_write(&wav->buf, &hdr, sizeof(hdr))))
+	if (unlikely(!bufwr_write(&wav->buf, &hdr, sizeof(hdr))))
 		goto out_abort;
 
-	goto out;
+	return wav;
 
 out_abort:
-	fobuf_abort(&wav->buf);
+	bufwr__abort(&wav->buf);
+	goto out_free;
 out_close:
 	close(fd);
 out_free:
@@ -119,7 +128,7 @@ bool wav_write_samples16(size_t num;
 		size_t num)
 
 {
-	const bool ret = fobuf_write(&wav->buf, (uint8_t *)sample, num * sizeof(sample[0]));
+	const bool ret = bufwr_write(&wav->buf, (uint8_t *)sample, num * sizeof(sample[0]));
 
 	if (unlikely(!ret)) {
 		say(ERR, "wav: write: %s", strerror(errno));
@@ -140,7 +149,7 @@ static bool rewrite_hdr(wav_t *wav)
 	fixed.riff.hdr.size = file_size - sizeof(struct chunk_hdr);
 	fixed.data.size = file_size - sizeof(fixed);
 
-	if (!fd_pwrite(wav->buf.fd, 0, &fixed, sizeof(fixed)))
+	if (!fd_pwrite(wav->buf.fd, 0, (uint8_t *)&fixed, sizeof(fixed)))
 		return false;
 
 	return true;
@@ -150,9 +159,9 @@ __attribute__((nonnull(1)))
 bool _wav_close(wav_t *wav)
 {
 	const bool ret = likely(
-		fobuf_flush(&wav->buf)
+		bufwr_flush(&wav->buf)
 		&& rewrite_hdr(wav)
-		&& fobuf_close(&wav->buf, false)
+		&& bufwr__close(&wav->buf, false)
 	);
 
 	free(wav);

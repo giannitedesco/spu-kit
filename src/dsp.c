@@ -46,6 +46,17 @@ struct sample {
 	};
 };
 
+/* fat samples allow us to accumulate results before clamping */
+struct fat_sample {
+	union {
+		struct {
+			int left;
+			int right;
+		};
+		int arr[2];
+	};
+};
+
 #define BRR_BUF_SZ 12
 struct vstate {
 	int interp_pos;
@@ -149,8 +160,24 @@ static uint8_t koff;
 /* toggles every sample */
 static bool toggle;
 
+/* these regs are read a few cycles before they are used, this keeps us honest
+ * if and when we ever move toward cycle accuracy
+ */
+static uint8_t esa;
+static uint8_t eon;
+
+/* as above but effectively calculated at time of read */
+static bool echo_enabled;
+static uint16_t echo_offset;
+static uint16_t echo_length;
+static uint16_t echo_ptr;
+
+#define ECHO_HIST_SIZE 8
+static struct sample echo_hist[ECHO_HIST_SIZE];
+static uint8_t echo_hist_pos;
+
 __attribute__((always_inline))
-static inline int clamp16(int val)
+static inline int16_t clamp16(int val)
 {
 	return ((int16_t)val != val) ? ((val >> 31) ^ 0x7fff) : val;
 }
@@ -241,12 +268,12 @@ static inline void dump_regs(void)
 			regs[0x70 | i]);
 	}
 
-	say(INFO, "     ESA: $%02x00       ED: $%02x    EFB: $%02x",
-			regs[REG_ESA], regs[REG_ED], regs[REG_EFB]);
+	say(INFO, "     ESA: $%02x00       EDL $%02x     EFB $%02x",
+			regs[REG_ESA], regs[REG_EDL], regs[REG_EFB]);
 	say(INFO, "     DIR: $%02x00   %s %s %s  NFREQ: $%02x",
 			regs[REG_DIR],
 			(regs[REG_FLG] & FLG_SOFT_RESET) ? "RST" : "---",
-			(regs[REG_FLG] & FLG_MUTE) ? "RST" : "---",
+			(regs[REG_FLG] & FLG_MUTE) ? "MUT" : "---",
 			(regs[REG_FLG] & FLG_ECHO_DISABLED) ? "---" : "ECH",
 			(regs[REG_FLG] & 0xf));
 	say(INFO, "MVOL L/R: $%02x $%02x       EVOL L/R: $%02x $%02x",
@@ -308,6 +335,7 @@ static inline struct brr_pair brr_pair_load(const uint16_t addr)
 
 static inline struct brr_pair brr_pair_scale(const struct brr_pair in, uint8_t shift)
 {
+	/* XXX: potentially undefined left shifts */
 	return (struct brr_pair) {
 		.s[0] = ((int)in.s[0] << shift) >> 1,
 		.s[1] = ((int)in.s[1] << shift) >> 1,
@@ -342,12 +370,14 @@ static int coeff1_mul(int p)
 /* multiply by 61/32 = 1.90625 */
 static int coeff2_mul(int p)
 {
+	/* XXX: potentially undefined left shifts */
 	return (p << 1) + ((-p * 3) >> 5);
 }
 
 /* multiply by 115/64 = 1.796875 */
 static int coeff3_mul(int p)
 {
+	/* XXX: potentially undefined left shifts */
 	return (p << 1) + ((-p * 13) >> 6);
 }
 
@@ -372,6 +402,7 @@ static int brr_filter3(const int s, const int p, const int pp)
 	return s + coeff3_mul(p) - coeff4_mul(pp);
 }
 
+__attribute__((optimize("unroll-loops")))
 static struct brr_block decode_brr(uint16_t aptr,
 					const struct brr_filter_state *st,
 					bool *end, bool *loop)
@@ -506,6 +537,16 @@ static inline uint16_t read_aram_word(const uint16_t addr)
 	return (aram[word_hi] << 8) | aram[word_lo];
 }
 
+__attribute__((always_inline))
+static inline void write_aram_word(const uint16_t addr, const uint16_t val)
+{
+	const uint16_t word_lo = addr + 0;
+	const uint16_t word_hi = addr + 1;
+
+	aram[word_hi] = val >> 8;
+	aram[word_lo] = val & 0xff;
+}
+
 struct dir_entry {
 	const uint16_t base;
 	const uint16_t loop;
@@ -584,7 +625,7 @@ static inline struct brr_filter_state vfilter_state(const struct vstate * const 
 
 static void brr_sample4(struct vstate * const st)
 {
-	const uint8_t filter = (st->brr_hdr >> 2) & 3;
+	const uint8_t filter = st->brr_hdr & (0x03 << 2);
 	const uint8_t scale = st->brr_hdr >> 4;
 	const uint8_t shift = (scale > 12) ? 12 : scale;
 	const struct brr_filter_state prev = vfilter_state(st);
@@ -595,25 +636,25 @@ static void brr_sample4(struct vstate * const st)
 	int a, b, c, d;
 
 	switch (__builtin_expect(filter, 2)) {
-	case 0:
+	case 0 << 2:
 		a = in[0].s[0];
 		b = in[0].s[1];
 		c = in[1].s[0];
 		d = in[1].s[1];
 		break;
-	case 1:
+	case 1 << 2:
 		a = brr_filter1(in[0].s[0], prev.old);
 		b = brr_filter1(in[0].s[1], a);
 		c = brr_filter1(in[1].s[0], b);
 		d = brr_filter1(in[1].s[1], c);
 		break;
-	case 2:
+	case 2 << 2:
 		a = brr_filter2(in[0].s[0], prev.old, prev.older);
 		b = brr_filter2(in[0].s[1], a, prev.old);
 		c = brr_filter2(in[1].s[0], b, a);
 		d = brr_filter2(in[1].s[1], c, b);
 		break;
-	case 3:
+	case 3 << 2:
 		a = brr_filter3(in[0].s[0], prev.old, prev.older);
 		b = brr_filter3(in[0].s[1], a, prev.old);
 		c = brr_filter3(in[1].s[0], b, a);
@@ -832,6 +873,76 @@ static inline struct sample silence(void)
 	};
 }
 
+__attribute__((pure,always_inline))
+static inline struct fat_sample sample_add(const struct sample a, const struct sample b)
+{
+
+	return (struct fat_sample) {
+		.left = (int)a.left + (int)b.left,
+		.right = (int)a.right + (int)b.right,
+	};
+}
+
+__attribute__((pure,always_inline))
+static inline struct fat_sample sample_accumulate(const struct fat_sample a,
+							const struct fat_sample b)
+{
+
+	return (struct fat_sample) {
+		.left = a.left + b.left,
+		.right = a.right + b.right,
+	};
+}
+
+__attribute__((always_inline))
+static inline struct sample sample_clamp(const struct fat_sample a)
+{
+	return (struct sample) {
+		.left = clamp16(a.left),
+		.right = clamp16(a.right),
+	};
+}
+
+__attribute__((always_inline))
+static inline struct sample sample_blend(const struct sample a, const struct sample b)
+{
+	const int l = (int)a.left + (int)b.left;
+	const int r = (int)a.right + (int)b.right;
+
+	return (struct sample) {
+		.left = clamp16(l),
+		.right = clamp16(r),
+	};
+}
+
+static int sample_scale(const int sample, const int8_t scale)
+{
+	return (sample * scale) >> 7;
+}
+
+__attribute__((always_inline))
+static inline struct sample sample_blend_scale8(const struct sample a,
+						const struct sample b,
+						const int8_t scale)
+{
+	const int l = (int)a.left + sample_scale(b.left, scale);
+	const int r = (int)a.right + sample_scale(b.right, scale);
+
+	return (struct sample) {
+		.left = clamp16(l),
+		.right = clamp16(r),
+	};
+}
+
+__attribute__((pure,always_inline))
+static inline struct sample pan(const int sample, const int8_t voll, const int8_t volr)
+{
+	return (struct sample) {
+		.left = sample_scale(sample, voll),
+		.right = sample_scale(sample, volr),
+	};
+}
+
 static struct sample voice_run(const unsigned int i)
 {
 	struct vregs *v = voice(i);
@@ -839,11 +950,11 @@ static struct sample voice_run(const unsigned int i)
 	const uint8_t bit = (1U << i);
 	int16_t sample;
 
-	/* CLOCK: cycle 1 */
+	/* VCLOCK: cycle 1 */
 
 	st->srcn_ptr = voice_srcn_pointer(i, v);
 
-	/* CLOCK: cycle 2 */
+	/* VCLOCK: cycle 2 */
 
 	/* Calculate BRR effective address */
 	if (!st->attack_delay) {
@@ -853,19 +964,20 @@ static struct sample voice_run(const unsigned int i)
 
 	/* TODO: read envelope 0 */
 
-	/* CLOCK: cycle 3a */
+	/* VCLOCK: cycle 3a */
 
 	/* XXX: pitch-read should be split over the two cycles */
 	st->pitch = voice_pitch(v);
 
-	/* CLOCK: cycle 3b */
+	/* VCLOCK: cycle 3b */
 	st->brr_hdr = read_aram_byte(st->brr_addr);
 	// st->brr_byte = read_aram_byte(st->brr_addr + st->brr_off);
 
-	/* CLOCK: cycle 3c */
+	/* VCLOCK: cycle 3c */
 
 	if (regs[REG_PMON] & bit) {
 		/* TODO: pitch mod with previous voice */
+		//say(WARN, "pitch-mod on voice %u", i);
 	}
 
 	if (st->attack_delay) {
@@ -938,7 +1050,7 @@ static struct sample voice_run(const unsigned int i)
 			return silence();
 	}
 
-	/* CLOCK: cycle 4 */
+	/* VCLOCK: cycle 4 */
 
 	/* Decode BRR */
 	if (st->interp_pos >= 0x4000) {
@@ -959,13 +1071,15 @@ static struct sample voice_run(const unsigned int i)
 	if (st->interp_pos > 0x7fff)
 		st->interp_pos = 0x7fff;
 
-	/* output left channel */
-	if (regs[REG_EON] & bit) {
-	}
+	/* output left channel
+	 * If we were cycle accurate we would blend our samples with output here
+	 */
 
-	/* CLOCK: cycle 5 */
+	/* VCLOCK: cycle 5 */
 
-	/* output right channel */
+	/* output right channel
+	 * If we were cycle accurate we would blend our samples with output here
+	 */
 
 	/* buffer ENDX */
 	if (st->attack_delay == 5) {
@@ -973,40 +1087,87 @@ static struct sample voice_run(const unsigned int i)
 		regs[REG_ENDX] &= ~bit;
 	}
 
-	/* CLOCK: cycle 6 */
+	/* VCLOCK: cycle 6 */
 	/* TODO: buffer OUTX */
 
-	/* CLOCK: cycle 7 */
+	/* VCLOCK: cycle 7 */
 	/* TODO: expose ENDX, buffer ENVX */
 
-	/* CLOCK: cycle 8 */
+	/* VCLOCK: cycle 8 */
 	/* TODO: expose OUTX */
 
-	/* CLOCK: cycle 9 */
+	/* VCLOCK: cycle 9 */
 	/* TODO: expose ENVX */
-	return (struct sample) {
-		.left = ((int)sample * v->voll) >> 7,
-		.right = ((int)sample * v->volr) >> 7,
-	};
+
+	return pan(sample, v->voll, v->volr);
 }
 
 __attribute__((always_inline))
-static inline struct sample sample_blend(const struct sample a, const struct sample b)
+static inline uint16_t echo_read_l(void)
 {
-	const int l = (int)a.left + (int)b.left;
-	const int r = (int)a.right + (int)b.right;
+	return read_aram_word(echo_ptr + 0);
+}
 
-	return (struct sample) {
-		.left = clamp16(l),
-		.right = clamp16(r),
+__attribute__((always_inline))
+static inline uint16_t echo_read_r(void)
+{
+	return read_aram_word(echo_ptr + 2);
+}
+
+__attribute__((always_inline))
+static inline void echo_write_l(const int16_t val)
+{
+	if (echo_enabled) {
+		write_aram_word(echo_ptr + 0, val);
+	}
+}
+
+__attribute__((always_inline))
+static inline void echo_write_r(const int16_t val)
+{
+	if (echo_enabled) {
+		write_aram_word(echo_ptr + 2, val);
+	}
+}
+
+static inline void fir_write_l(const int16_t val)
+{
+	echo_hist[(echo_hist_pos + 0) % ECHO_HIST_SIZE].left = val >> 1;
+}
+
+
+static inline void fir_write_r(const int16_t val)
+{
+	echo_hist[(echo_hist_pos + 0) % ECHO_HIST_SIZE].right = val >> 1;
+}
+
+static inline int16_t fir_read_l(const uint8_t depth)
+{
+	return echo_hist[(echo_hist_pos + depth) % ECHO_HIST_SIZE].left;
+}
+
+static inline int16_t fir_read_r(const uint8_t depth)
+{
+	return echo_hist[(echo_hist_pos + depth) % ECHO_HIST_SIZE].right;
+}
+
+static inline struct fat_sample calc_fir(const uint8_t i)
+{
+	const int8_t coeff = regs[reg_coeff(i)];
+
+	return (struct fat_sample) {
+		.left = (fir_read_l(i + 1) * coeff) >> 6,
+		.right = (fir_read_r(i + 1) * coeff) >> 6,
 	};
 }
 
 /* Run 32 cycles */
 static struct sample next_sample(void)
 {
-	struct sample sample = {0, };
-	struct sample echo = {0, };
+	struct sample main_out = silence();
+	struct sample echo_out = silence();
+	struct sample echo_sample;
+	struct fat_sample echo_in;
 
 	// say(DEBUG, "DSP 32 clocks");
 
@@ -1026,34 +1187,118 @@ static struct sample next_sample(void)
 
 	/* TODO: sample noise */
 
+	/* We run each voice all the way through in sequence and each one
+	 * outputs a sample, then we gather up and blend all those samples
+	 * together and do all the final steps to produce the output sample.
+	 */
 	for (int i = 0; i < DSP_CHANNELS; i++) {
 		const struct sample vsample = voice_run(i);
 
-		sample = sample_blend(sample, vsample);
-		if (regs[REG_EON] & (1U << i)) {
-			echo = sample_blend(sample, vsample);
+		main_out = sample_blend(main_out, vsample);
+		if (eon & (1U << i)) {
+			echo_out = sample_blend(echo_out, vsample);
 		}
 	}
 
-	/* ECHO CLOCK 1 */
-	/* TODO: blend echo into left output sample */
-	/* TOOD: calculate echo feedback term and buffer it */
+	/* --cyc22 */
+	if (++echo_hist_pos >= ECHO_HIST_SIZE) {
+		echo_hist_pos = 0;
+	}
 
-	/* ECHO CLOCK 2 */
-	/* TODO: blend echo into left output sample */
-	/* TODO: check global muting */
+	echo_ptr = (esa * 0x100 + echo_offset);
 
-	/* ECHO CLOCK 3 */
-	/* TODO: check echo enabled */
+	/* read left channel of echo buffer */
+	fir_write_l(echo_read_l());
 
-	/* ECHO CLOCK 4 */
-	/* TODO: Check ESA */
-	/* TODO: write left echo */
+	/* FIR step 0 */
+	echo_in = calc_fir(0);
 
-	/* ECHO CLOCK 5 */
-	/* TODO: write right echo */
+	/* --cyc23 */
+	/* FIR steps 1, 2 */
+	echo_in = sample_accumulate(echo_in, calc_fir(1));
+	echo_in = sample_accumulate(echo_in, calc_fir(2));
 
-	return sample;
+	/* read right channel of echo buffer */
+	fir_write_r(echo_read_r());
+
+
+	/* --cyc24 */
+	/* FIR steps 3, 4, 5 */
+	echo_in = sample_accumulate(echo_in, calc_fir(3));
+	echo_in = sample_accumulate(echo_in, calc_fir(4));
+	echo_in = sample_accumulate(echo_in, calc_fir(5));
+
+	/* --cyc25 */
+	/* FIR steps 6,7 */
+	echo_in = sample_accumulate(echo_in, calc_fir(6));
+	echo_in = sample_accumulate(echo_in, calc_fir(7));
+	echo_sample = sample_clamp(echo_in);
+	echo_sample.left &= ~1;
+	echo_sample.right &= ~1;
+
+	/* TODO: knock off low bit */
+
+	/* If we were cycle-accurate, this is where all voice processing would end */
+
+	/* --cyc26 */
+	/* blend echo into left output sample */
+	int l = sample_scale(main_out.left, regs[REG_MVOLL] << 4)
+		+ sample_scale(echo_sample.left, regs[REG_EVOLL] << 4);
+
+	/* calculate echo feedback term and buffer it */
+	echo_out = sample_blend_scale8(echo_out, echo_sample, regs[REG_EFB]);
+	echo_out.left &= ~1;
+	echo_out.right &= ~1;
+
+	/* ---cyc27 */
+	/* misc */
+	/* TODO: PMON */
+	/* echo */
+
+	/* blend echo into right output sample */
+	int r = sample_scale(main_out.right, regs[REG_MVOLR] << 4)
+		+ sample_scale(echo_sample.right, regs[REG_EVOLR] << 4);
+
+	/* check global muting */
+	if (regs[REG_FLG] & FLG_MUTE) {
+		l = r = 0;
+	}
+
+	/* ---cyc28 */
+	/* misc */
+	/* TODO: cache non, dir */
+	eon = regs[REG_EON];
+	/* echo */
+	echo_enabled = !(regs[REG_FLG] & FLG_ECHO_DISABLED);
+
+	/* ---cyc29 */
+	/* misc */
+	/* TODO: clear KON 63 clocks after last read */
+
+	/* echo */
+	/* Check ESA/EDL and compute the address, position in echo buffer */
+	esa = regs[REG_ESA];
+	if (!echo_offset) {
+		echo_length = (regs[REG_EDL] & 0xf) * 0x800;
+	}
+	echo_offset += 4;
+	if (echo_offset >= echo_length)
+		echo_offset = 0;
+
+	/* write left echo */
+	echo_write_l(echo_out.left);
+
+	/* cache echo enabled flag (again) */
+	echo_enabled = !(regs[REG_FLG] & FLG_ECHO_DISABLED);
+
+	/* --cyc30 */
+	/* write right echo */
+	echo_write_r(echo_out.right);
+
+	return (struct sample) {
+		.left = clamp16(l),
+		.right = clamp16(r),
+	};
 }
 
 static unsigned long cycs;
@@ -1126,7 +1371,7 @@ static void init(void)
 	regs[REG_KON] = 0;
 	regs[REG_KOFF] = 0;
 	regs[REG_FLG] = 0x60;
-	regs[REG_ED] = 0x0;
+	regs[REG_EDL] = 0x0;
 	dump_samples();
 #endif
 	dump_regs();

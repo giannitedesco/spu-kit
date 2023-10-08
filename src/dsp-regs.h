@@ -77,9 +77,10 @@ struct vregs {
 #define REG_EON			0x4d /* echo */
 #define REG_DIR			0x5d /* directory addr (page number) */
 #define REG_ESA			0x6d /* echo buffer (page number) */
-#define REG_ED			0x7d /* echo delay, 4 bits */
+#define REG_EDL			0x7d /* echo delay, 4 bits */
 
-static inline uint8_t coeff_register_address(const uint8_t chan)
+__attribute__((pure))
+static inline uint8_t reg_coeff(const uint8_t chan)
 {
 	xassert(chan < DSP_CHANNELS);
 	return (chan << 4) | VREG_COEF;
@@ -91,7 +92,7 @@ static inline uint8_t coeff_register_address(const uint8_t chan)
 		static_assert(x < DSP_CHANNELS, "Bad channel index"); \
 		_reg_addr = (x << 4) | VREG_COEF; \
 	} else { \
-		_reg_addr = coeff_register_address(x); \
+		_reg_addr = reg_coeff(x); \
 	} \
 	_reg_addr; \
 })
@@ -132,10 +133,9 @@ static inline const char *dsp_vreg_template(uint8_t addr_lo)
 static inline const char *dsp_reg_name(uint8_t addr)
 {
 	const uint8_t addr_lo = addr & 0x0f;
-	const char *tmpl = NULL;
 	static char buf[16];
+	const char * const tmpl = dsp_vreg_template(addr_lo);
 
-	tmpl = dsp_vreg_template(addr_lo);
 	if (tmpl) {
 		const uint8_t chan = (addr >> 4);
 
@@ -165,7 +165,7 @@ static inline const char *dsp_reg_name(uint8_t addr)
 	case REG_EON: return "EON";
 	case REG_DIR: return "DIR";
 	case REG_ESA: return "ESA";
-	case REG_ED: return "ED";
+	case REG_EDL: return "EDL";
 
 	/* e block of 8 is all unused */
 	default:

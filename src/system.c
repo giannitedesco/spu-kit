@@ -3,27 +3,39 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <spu-kit/system.h>
+#include "system.h"
 
 static const loglevel_t _log_level = TRACE;
 
-static const char color[] = {
-	[LOGLEVEL_TRACE]	= '8',	/* grey */
-	[LOGLEVEL_DEBUG]	= '4',	/* blue */
-	[LOGLEVEL_INFO]		= '2',	/* green */
-	[LOGLEVEL_WARN]		= '3',	/* orange */
-	[LOGLEVEL_ERR]		= '1',	/* red */
-	[LOGLEVEL_ABRT]		= '6',	/* teal */
-};
+__attribute__((pure))
+static inline char color(const loglevel_t lvl)
+{
+	switch (lvl.lvl) {
+	case LOGLEVEL_TRACE:	return '8'; /* grey */
+	case LOGLEVEL_DEBUG:	return '4'; /* blue */
+	case LOGLEVEL_INFO:	return '2'; /* green */
+	case LOGLEVEL_WARN:	return '3'; /* orange */
+	case LOGLEVEL_ERR:	return '1'; /* red */
+	case LOGLEVEL_ABRT:	return '6'; /* teal */
+	default:
+		xunreachable();
+	}
+}
 
-static const char * const code_str[] = {
-	"---", // trace
-	"dbg", // debug
-	"inf", // info
-	"wrn", // warning
-	"err", // error
-	"xxx", // critical
-};
+__attribute__((pure))
+static inline const char *code_str(const loglevel_t lvl)
+{
+	switch (lvl.lvl) {
+	case LOGLEVEL_TRACE:	return "---";
+	case LOGLEVEL_DEBUG:	return "dbg";
+	case LOGLEVEL_INFO:	return "inf";
+	case LOGLEVEL_WARN:	return "wrn";
+	case LOGLEVEL_ERR:	return "err";
+	case LOGLEVEL_ABRT:	return "xxx";
+	default:
+		xunreachable();
+	}
+}
 
 static bool stdout_is_a_tty;
 
@@ -51,16 +63,14 @@ void say(loglevel_t code, const char *fmt, ...)
 	 */
 	flockfile(stdout);
 
-	if (code.lvl == LOGLEVEL_TRACE) {
-		fputs_unlocked("     ", stdout);
-	}else if (stdout_is_a_tty) {
+	if (stdout_is_a_tty) {
 		fputs_unlocked("\033[1;3", stdout);
-		fputc_unlocked(color[code.lvl], stdout);
+		fputc_unlocked(color(code), stdout);
 		fputc_unlocked('m', stdout);
-		fputs_unlocked(code_str[code.lvl], stdout);
+		fputs_unlocked(code_str(code), stdout);
 		fputs_unlocked("\033[0m: ", stdout);
 	} else {
-		fputs_unlocked(code_str[code.lvl], stdout);
+		fputs_unlocked(code_str(code), stdout);
 		fputs_unlocked(": ", stdout);
 	}
 
@@ -79,8 +89,8 @@ void x__assert_fail(const char *prefix,
 			unsigned int line,
 			const char *func)
 {
-	fprintf(stderr,
-		"%s: %s:%u: %s %s(): %s\n",
+	say(ABRT,
+		"%s: %s:%u: %s %s(): %s",
 		program_invocation_short_name,
 		file, line, prefix, func, msg);
 	abort();

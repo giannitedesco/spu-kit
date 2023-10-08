@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stdbool.h>
+#include <stdint.h>
+
 /* The register space */
 #define APU_TEST	0x00f0
 #define APU_CTRL	0x00f1

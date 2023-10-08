@@ -1,5 +1,8 @@
 #pragma once
 
+#include <assert.h>
+#include <stdint.h>
+
 #define SPC_FORMAT_ID "SNES-SPC700 Sound File Data v0.30"
 #define SPC_MAGIC			0x1a1a
 #define SPC_ID666_TAGGED		0x1a

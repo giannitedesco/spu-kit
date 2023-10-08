@@ -8,13 +8,14 @@ BIN_DIR := bin
 include mk/rules.mk
 
 SPUKIT_SRC := \
+	fd.c \
+	bufwr.c \
 	hexdump.c \
 	system.c \
 	spc700.c \
 	apu.c \
 	dsp.c \
 	wav.c \
-	fobuf.c \
 	main.c
 
 $(eval $(call make_bin,spukit,$(SPUKIT_SRC)))

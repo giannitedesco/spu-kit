@@ -1,11 +1,12 @@
-#include <string.h>
-
-#include <spu-kit/system.h>
 #include <spu-kit/spc700.h>
 #include <spu-kit/dsp.h>
 
 #include "aram.h"
 #include "apu.h"
+#include "system.h"
+
+#include <stdio.h>
+#include <string.h>
 
 /* Accuracy */
 // #define ACCURATE_SPC700

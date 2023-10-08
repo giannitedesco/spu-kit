@@ -1,3 +1,11 @@
+#include <spu-kit/spc-file.h>
+#include <spu-kit/apu.h>
+#include <spu-kit/spc700.h>
+#include <spu-kit/dsp.h>
+
+#include "fd.h"
+#include "system.h"
+
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -5,12 +13,6 @@
 #include <stdlib.h>
 #include <endian.h>
 
-#include <spu-kit/system.h>
-#include <spu-kit/fobuf.h>
-#include <spu-kit/spc-file.h>
-#include <spu-kit/apu.h>
-#include <spu-kit/spc700.h>
-#include <spu-kit/dsp.h>
 
 static bool fill_buf(size_t len;
 			int fd,

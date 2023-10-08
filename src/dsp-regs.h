@@ -1,5 +1,10 @@
 #pragma once
 
+#include "system.h"
+
+#include <stdint.h>
+#include <stdio.h>
+
 #define DSP_CHANNELS	8
 
 enum vreg_e {

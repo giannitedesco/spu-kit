@@ -1,14 +1,14 @@
-#include <string.h>
-#include <stdlib.h>
-#include <endian.h>
-
-#include <spu-kit/system.h>
 #include <spu-kit/dsp.h>
 #include <spu-kit/wav.h>
 
 #include "dsp-regs.h"
 #include "dsp.h"
 #include "aram.h"
+#include "system.h"
+
+#include <string.h>
+#include <stdlib.h>
+#include <endian.h>
 
 //#define BRR_DECODE_TRACE
 //#define MMIO_TRACE

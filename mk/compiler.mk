@@ -8,12 +8,22 @@ ARCH_CFLAGS := \
 TARGET_CFLAGS := \
 	$(ARCH_CFLAGS)
 
-#DEBUG_CFLAGS := -Og -fno-inline-functions
+DEBUG_CFLAGS := \
+	-ggdb \
+	-gdwarf-4
 
 TARGET_DEFS := -D_GNU_SOURCE
 
+ifdef SANITIZE
+SANITIZE_CFLAGS := -fsanitize=undefined,address -fno-sanitize=alignment
+endif
+
 ifdef BENCHMARK
 BENCHMARK_DEFS := -DNDEBUG
+endif
+
+ifdef ANALYZER
+ANALYZER_CFLAGS := -fanalyzer
 endif
 
 ifdef DEBUG
@@ -21,12 +31,10 @@ OPT_CFLAGS := -Og -fno-inline-functions
 else
 OPT_CFLAGS := \
 	-O2 \
-	-ggdb \
-	-gdwarf-4 \
 	-flto -fwhole-program -fno-fat-lto-objects \
 	-finline-functions \
-	-fgcse-after-reload -fgcse-las \
-	-ftree-pre \
+	-ftree-partial-pre \
+	-fgcse-after-reload \
 	-fipa-cp-clone \
 	-fipa-pta
 endif
@@ -60,6 +68,8 @@ CC := gcc
 CFLAGS := \
 	$(TARGET_CFLAGS) \
 	$(OPT_CFLAGS) \
+	$(SANITIZE_CFLAGS) \
+	$(ANALYZER_CFLAGS) \
 	$(DEBUG_CFLAGS) \
 	$(WARN_CFLAGS) \
 	$(INCLUDES) \

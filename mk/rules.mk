@@ -20,6 +20,10 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cc $(MAKEFILE_LIST) | $(call dstamp,$$(@D))
 	$(info c-minus: $(patsubst $(OBJ_DIR)/%,%,$@))
 	$(CPP) $(CPPFLAGS) -MMD -MP -MF $(call depfile,$@) -MT $@ -c -o $@ $<
 
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(MAKEFILE_LIST) | $(call dstamp,$$(@D))
+	$(info c-minus: $(patsubst $(OBJ_DIR)/%,%,$@))
+	$(CPP) $(CPPFLAGS) -MMD -MP -MF $(call depfile,$@) -MT $@ -c -o $@ $<
+
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.S $(MAKEFILE_LIST) | $(call dstamp,$$(@D))
 	$(info assemble: $(patsubst $(OBJ_DIR)/%,%,$@))
 	$(CC) $(CFLAGS) -D__ASM__ -MMD -MP -MF $(call depfile,$@) -MT $@ \
@@ -67,12 +71,18 @@ $(call _make_bin,$1,$2,$(call objfile,$2),$3,CPP)
 endef
 
 
-define _add_cflags
-$1: CFLAGS += $2
+define _add_var
+$1: $2 += $3
 endef
 
 # 1 src-list
 # 2 cflags
 define add_cflags
-$(call _add_cflags,$(call objfile,$1),$2)
+$(call _add_var,$(call objfile,$1),CFLAGS,$2)
+endef
+
+# 1 src-list
+# 2 cflags
+define add_cppflags
+$(call _add_var,$(call objfile,$1),CPPFLAGS,$2)
 endef

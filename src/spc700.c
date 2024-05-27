@@ -2177,7 +2177,7 @@ static void insn_cmp_dp_dp(void)
 	const uint8_t src_val = mem_load(src);
 	const uint8_t dst_val = mem_load(dst);
 
-	alu_cmp(src_val, dst_val);
+	alu_cmp(dst_val, src_val);
 
 	insn_trace("cmp  d,d      $%02x == $%02x ($%04x $%04x) [%s]",
 		dst_val, src_val, dst, src, psw().str);
@@ -2667,7 +2667,7 @@ static void insn_decw_dp(void)
 	set_zn16(result);
 	insn_trace("decw d        $%04x-- -> $%04x ($%04x)",
 			operand, result, addr);
-	mem_store(addr, result);
+	mem_store_word(addr, result);
 }
 
 /* 0x3a - Increment 16 bit word at direct page */
@@ -2680,7 +2680,7 @@ static void insn_incw_dp(void)
 	set_zn16(result);
 	insn_trace("incw d        $%04x++ -> $%04x ($%04x)",
 			operand, result, addr);
-	mem_store(addr, result);
+	mem_store_word(addr, result);
 }
 
 /* 0x5a - compare 16 bit word from direct page to YA */
@@ -2780,7 +2780,7 @@ static void insn_mul_ya(void)
 {
 	const uint16_t result = a * y;
 
-	set_zn16(result);
+	set_zn((result >> 8));
 
 	insn_trace("mul  YA       $%02x * $%02x -> $%04x [%s]",
 		a, y, result, psw().str);
@@ -2876,9 +2876,7 @@ static void insn_dbnz_dp(void)
 	const uint8_t result = operand - 1;
 	const int8_t disp = relative();
 
-	zero = !result;
-
-	if (!zero) {
+	if (result) {
 		pc += disp;
 		branch_taken();
 		insn_trace("dbnz d,rel    $%02x -> $%02x ($%04x) %d taken -> $%04x",
@@ -2896,8 +2894,6 @@ static void insn_dbnz_y(void)
 {
 	const uint8_t result = y - 1;
 	const int8_t disp = relative();
-
-	//zero = !result;
 
 	if (result) {
 		pc += disp;
@@ -2987,6 +2983,7 @@ static void insn_mov_x_dp(void)
 	const uint8_t operand = mem_load(addr);
 
 	x = operand;
+	set_zn(operand);
 
 	insn_trace("mov  X,d      $%02x ($%04x)", a, addr);
 }

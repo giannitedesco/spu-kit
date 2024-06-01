@@ -37,7 +37,7 @@ union state {
 };
 
 
-union state s;
+static union state s;
 static uint8_t io_in[4];
 static uint8_t io_out[4];
 static struct timer T[3];

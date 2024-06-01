@@ -1426,14 +1426,18 @@ __attribute__((noinline))
 static void bad_store(const uint8_t addr, const uint8_t byte)
 {
 	say(WARN, "bad dsp store ($%02x) $%02x", addr, byte);
+#if DIEDIEDIE
 	abort();
+#endif
 }
 
 __attribute__((noinline))
 static uint8_t open_bus(const uint8_t addr)
 {
 	say(WARN, "bad dsp load ($%02x)", addr);
+#if DIEDIEDIE
 	abort();
+#endif
 	return 0xff;
 }
 

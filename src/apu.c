@@ -77,10 +77,11 @@ static void timer_enable(const uint8_t index)
 {
 	const uint8_t div = s.regs.tdiv[index];
 
-	if (!T[index].enabled)
+	if (!T[index].enabled) {
 		mmio_trace("timer_setup: APU_T0DIV $%02x", div);
-	T[index] = timer_init(div);
-	s.regs.tout[index] = 0;
+		T[index] = timer_init(div);
+		s.regs.tout[index] = 0;
+	}
 }
 
 __attribute__((noinline))
@@ -259,7 +260,7 @@ uint8_t _apu_mmio_load(const uint16_t addr)
 	return byte;
 }
 
-static inline void do_timer_tick(uint8_t index)
+static inline void do_timer_tick(const uint8_t index)
 {
 	struct timer * const t = &T[index];
 
@@ -273,7 +274,7 @@ static inline void do_timer_tick(uint8_t index)
 	}
 }
 
-static void timer_tick(uint8_t index)
+static inline void timer_tick(const uint8_t index)
 {
 	xassert(index < ARRAY_SIZE(T));
 	do_timer_tick(index);

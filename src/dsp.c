@@ -197,7 +197,8 @@ static uint16_t voice_pitch(const struct vregs *v)
 }
 
 #define FLAG_REG(x, y) ((regs[x] & (1U << y)) ? "YES" : "---")
-static inline void dump_regs(void)
+__attribute__((noinline))
+static void do_dump_regs(void)
 {
 	say(INFO, "%8s:  0   1   2   3   4   5   6   7", "VOICE");
 	say(INFO, "%8s: %s %s %s %s %s %s %s %s",
@@ -279,6 +280,11 @@ static inline void dump_regs(void)
 	say(INFO, "MVOL L/R: $%02x $%02x       EVOL L/R: $%02x $%02x",
 			regs[REG_MVOLL], regs[REG_MVOLR],
 			regs[REG_EVOLL], regs[REG_EVOLR]);
+}
+
+static inline void dump_regs(void)
+{
+	do_dump_regs();
 }
 
 #define BRR_BLOCK_SIZE		9
@@ -1334,7 +1340,8 @@ void _dsp_run32(void)
 	}
 }
 
-static void dump_dir(void)
+__attribute__((noinline))
+static void do_dump_dir(void)
 {
 	say(INFO, "256 entry BRR sample source table:");
 	for (int i = 0; i < 0x100; i += 8) {
@@ -1365,6 +1372,11 @@ static void dump_dir(void)
 	}
 }
 
+static inline void dump_dir(void)
+{
+	do_dump_dir();
+}
+
 static void init(void)
 {
 #if 0
@@ -1374,8 +1386,10 @@ static void init(void)
 	regs[REG_EDL] = 0x0;
 	dump_samples();
 #endif
+#if 0
 	dump_regs();
 	dump_dir();
+#endif
 	ctr_init();
 }
 
@@ -1425,7 +1439,7 @@ static inline uint8_t load(const uint8_t addr)
 __attribute__((noinline))
 static void bad_store(const uint8_t addr, const uint8_t byte)
 {
-	say(WARN, "bad dsp store ($%02x) $%02x", addr, byte);
+	mmio_trace("bad dsp store ($%02x) $%02x", addr, byte);
 #if DIEDIEDIE
 	abort();
 #endif
@@ -1434,7 +1448,7 @@ static void bad_store(const uint8_t addr, const uint8_t byte)
 __attribute__((noinline))
 static uint8_t open_bus(const uint8_t addr)
 {
-	say(WARN, "bad dsp load ($%02x)", addr);
+	mmio_trace("bad dsp load ($%02x)", addr);
 #if DIEDIEDIE
 	abort();
 #endif

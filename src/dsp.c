@@ -155,6 +155,7 @@ static struct vstate vstate[DSP_CHANNELS];
 
 /* KON/KOF when last checked */
 static uint8_t kon;
+static uint8_t new_kon;
 static uint8_t koff;
 
 /* toggles every sample */
@@ -983,7 +984,7 @@ static struct sample voice_run(const unsigned int i)
 
 	if (regs[REG_PMON] & bit) {
 		/* TODO: pitch mod with previous voice */
-		//say(WARN, "pitch-mod on voice %u", i);
+		say(WARN, "pitch-mod on voice %u", i);
 	}
 
 	if (st->attack_delay) {
@@ -1180,8 +1181,10 @@ static struct sample next_sample(void)
 	/* poll KON/KOF every other sample */
 	toggle ^= 1;
 
-	if (!toggle) {
-		kon = regs[REG_KON] & ~kon;
+	if (toggle) {
+		new_kon &= ~kon;
+	} else {
+		kon = new_kon;
 		koff = regs[REG_KOFF];
 
 		if (kon) {
@@ -1379,6 +1382,7 @@ static inline void dump_dir(void)
 
 static void init(void)
 {
+	new_kon = regs[REG_KON];
 #if 0
 	regs[REG_KON] = 0;
 	regs[REG_KOFF] = 0;
@@ -1416,6 +1420,9 @@ static void store(const uint8_t addr, const uint8_t byte)
 	}
 
 	switch (addr) {
+	case REG_KON:
+		new_kon = byte;
+		break;
 	case REG_ENDX:
 		/* all writes clear the register */
 		regs[REG_ENDX] = 0;

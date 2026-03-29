@@ -2780,7 +2780,7 @@ static void insn_mul_ya(void)
 {
 	const uint16_t result = a * y;
 
-	set_zn((result >> 8));
+	set_zn16(result);
 
 	insn_trace("mul  YA       $%02x * $%02x -> $%04x [%s]",
 		a, y, result, psw().str);

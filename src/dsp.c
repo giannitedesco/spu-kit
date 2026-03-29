@@ -1383,6 +1383,8 @@ static inline void dump_dir(void)
 static void init(void)
 {
 	new_kon = regs[REG_KON];
+	esa = regs[REG_ESA];
+	echo_enabled = !(regs[REG_FLG] & FLG_ECHO_DISABLED);
 #if 0
 	regs[REG_KON] = 0;
 	regs[REG_KOFF] = 0;

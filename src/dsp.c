@@ -1251,8 +1251,8 @@ static struct sample next_sample(void)
 
 	/* --cyc26 */
 	/* blend echo into left output sample */
-	int l = sample_scale(main_out.left, regs[REG_MVOLL] << 4)
-		+ sample_scale(echo_sample.left, regs[REG_EVOLL] << 4);
+	int l = sample_scale(main_out.left, regs[REG_MVOLL])
+		+ sample_scale(echo_sample.left, regs[REG_EVOLL]);
 
 	/* calculate echo feedback term and buffer it */
 	echo_out = sample_blend_scale8(echo_out, echo_sample, regs[REG_EFB]);
@@ -1265,8 +1265,8 @@ static struct sample next_sample(void)
 	/* echo */
 
 	/* blend echo into right output sample */
-	int r = sample_scale(main_out.right, regs[REG_MVOLR] << 4)
-		+ sample_scale(echo_sample.right, regs[REG_EVOLR] << 4);
+	int r = sample_scale(main_out.right, regs[REG_MVOLR])
+		+ sample_scale(echo_sample.right, regs[REG_EVOLR]);
 
 	/* check global muting */
 	if (regs[REG_FLG] & FLG_MUTE) {

@@ -104,7 +104,7 @@ static void apu_ctrl_store(const uint8_t byte)
 	}
 
 	if (byte & CTRL_T2) {
-		timer_enable(1);
+		timer_enable(2);
 	} else {
 		mmio_trace("Timer: T2: disable");
 		timer_disable(&T[2]);

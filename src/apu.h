@@ -21,8 +21,11 @@
 #define APU_T1OUT	0x00fe
 #define APU_T2OUT	0x00ff
 
-#define APU_REG(x)	(x & 0x0f)
-#define APU_OFF(x, y)	(x - APU_REG(x))
+/* Return the index of the register from the address */
+#define APU_REG(x)	((x) & 0x0f)
+
+/* Return the offset of index x from address y */
+#define APU_OFF(x, y)	((x) - APU_REG((y)))
 
 #define ROM_ADDR	0xffc0
 

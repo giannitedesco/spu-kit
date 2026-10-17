@@ -831,7 +831,7 @@ static void insn_tcall_8(void)
 /* 0x91 table-call slot 9 */
 static void insn_tcall_9(void)
 {
-	tcall(0);
+	tcall(9);
 }
 
 /* 0xa1 table-call slot 10 */

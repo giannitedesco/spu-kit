@@ -141,7 +141,18 @@ void _apu_mmio_store(const uint16_t addr, const uint8_t byte)
 {
 	const uint8_t reg = APU_REG(addr);
 
-	s.sram[reg] = byte;
+	switch (reg) {
+	case APU_REG(APU_T0OUT):
+	case APU_REG(APU_T1OUT):
+	case APU_REG(APU_T2OUT):
+		/* don't let these be written to, they are read-only, and sram
+		 * shadows regs
+		 */
+		break;
+	default:
+		s.sram[reg] = byte;
+		break;
+	}
 
 	switch (reg) {
 	case APU_REG(APU_TEST):
